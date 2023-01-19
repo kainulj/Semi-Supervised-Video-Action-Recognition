@@ -1,44 +1,47 @@
 import torch
+import torch.nn as nn
 from einops import rearrange
 from einops.layers.torch import Rearrange
 
-class TubeletEncoding(nn.module):
-  def __init__(self, t, h, w, d, c):
+class TubeletEncoding(nn.Module):
+  def __init__(self, t, h, w, hidden, c):
 
     super(TubeletEncoding, self).__init__()
     tubelet_dim = c * t * h * w
-    self.embedding = n.Sequential(
-      Rearrange('b (t t1) c (h h1) (w w1) <- b t (h w) (t2 h1 w1 c)', t1=t, h1=h, w1=w),
-      nn.Linear(tubelet_dim, d)
-    )
+    self.hidden = hidden
+    self.projection = nn.Conv3d(in_channels=c, out_channels=hidden, 
+                               kernel_size=(t, h, w),
+                               stride=(t, h, w))
 
   def forward(self, x):
-    return self.embedding(x)
+    b = x.shape[0]
+    x = self.projection(x)
+    return x.view(b, -1, self. hidden)
     
 
-class SPEncoderBlock(nn.module):
+class SPEncoderBlock(nn.Module):
   # Encoder block for the Spatio-Temporal attention
-  def __init__(self, N, d, hidden, num_heads=8):
+  def __init__(self, hidden, num_heads=8):
 
     super(SPEncoderBlock, self).__init__()
 
     self.hidden = hidden
 
-    self.norm1 = nn.LayerNorm(d)
-    self.msa = nn.MultiHeadAttention(
-      embed_dim=4,
+    self.norm1 = nn.LayerNorm(hidden)
+    self.msa = nn.MultiheadAttention(
+      embed_dim=hidden,
       num_heads=num_heads,
       batch_first=True
     )
 
-    self.norm2 = nn.LayerNorm(d)
+    self.norm2 = nn.LayerNorm(hidden)
     self.mlp = nn.Sequential(
-      nn.Linear(d, d),
-      nn.Gelu(),
-      nn.Linear(d, d)
+      nn.Linear(hidden, 4 * hidden),
+      nn.GELU(),
+      nn.Linear(4 * hidden, hidden)
     )
 
-  def add_pretrained_weights(npz, block_n, self):
+  def add_pretrained_weights(self, npz, block_n):
     with torch.no_grad():
       ATT_K = "MultiHeadDotProductAttention_1/key"
       ATT_OUT = "MultiHeadDotProductAttention_1/out"
@@ -64,7 +67,7 @@ class SPEncoderBlock(nn.module):
 
       self.msa.in_proj_weight.copy_(torch.cat((k_weight, q_weight, v_weight), 0))
 
-      self.msa.out_proj_weight.copy_(torch.from_numpy(npz[f'{BLOCK}/{ATT_OUT}/kernel']).view(self.hidden, self.hidden)
+      self.msa.out_proj.weight.copy_(torch.from_numpy(npz[f'{BLOCK}/{ATT_OUT}/kernel']).view(self.hidden, self.hidden)
   )
 
       # MSA biases
@@ -74,38 +77,35 @@ class SPEncoderBlock(nn.module):
 
       self.msa.in_proj_bias.copy_(torch.cat((k_bias, q_bias, v_bias)))
 
-      self.msa.out_proj_bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{ATT_OUT}/bias']))
+      self.msa.out_proj.bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{ATT_OUT}/bias']))
 
       # MLP weights
-      self.mlp[0].weight.copy(torch.from_numpy(npz[f'{BLOCK}/{MLP_1}/scale']))
-      self.mlp[0].bias.copy(torch.from_numpy(npz[f'{BLOCK}/{MLP_1}/bias']))
-      self.mlp[2].weight.copy(torch.from_numpy(npz[f'{BLOCK}/{MLP_1}/scale']))
-      self.mlp[2].bias.copy(torch.from_numpy(npz[f'{BLOCK}/{MLP_1}/bias']))
+      self.mlp[0].weight.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_1}/kernel']).t())
+      self.mlp[0].bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_1}/bias']))
+      self.mlp[2].weight.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_2}/kernel']).t())
+      self.mlp[2].bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_2}/bias']))
 
-  def forward(x, self):
-    y = self.msa(self.norm1(x)) + x
-    z = self.mlp(self.norm2(y)) + y
-    return z
+  def forward(self, x):
+    print(x.shape)
+    x = self.msa(self.norm1(x), self.norm1(x), self.norm1(x))[0] + x
+    x = self.mlp(self.norm2(x)) + x
+    return x
 
 class SPAttention(nn.Module):
   # Spatio-Temporal attention
-  def __init__(self, N, d, L):
+  def __init__(self, hidden, L):
 
     super(SPAttention, self).__init__()
+    self.L = L
+    self.decoder_blocks = nn.ModuleList([SPEncoderBlock(hidden) for i in range(L)])
 
-    self.decoder_blocks = nn.ModuleList([SPEncoderBlock(N, d) for i in range(L)])
-
-  def add_pretrained_weights(npz, self):
+  def add_pretrained_weights(self, npz):
     with torch.no_grad():
       # Add weights to the Attention blocks
-      for i in range(12):
+      for i in range(self.L):
         self.decoder_blocks[i].add_pretrained_weights(npz, i)
 
-      # 
-
-      
-
-  def forward(x, self):
+  def forward(self, x):
 
     for block in self.decoder_blocks:
       x = block(x)
@@ -113,59 +113,121 @@ class SPAttention(nn.Module):
     return x
 
 
-class SPAModel(nn.module):
-  def __init__(self, N, t, h, w, d, hidden, c, frames, num_classes):
+class SPAModel(nn.Module):
+  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87):
     
     super(SPAModel, self).__init__()
-    self.nt = frames / t
-    self.tubelet = TubeletEncoding(t, h, w, d, c)
-    self.pos_emb = nn.Parameter(torch.zeros(self.nt, h * w + 1, hidden))
-    self.cls = nn.Parameter(torch.zeros(1, 1, hidden))
-    self.patch_emb = nn.Parameter(torch.zeros(self.nt, h * w + 1, hidden))
-    # Embeddings
+    self.nt = frames // t
+    self.hidden = hidden
+    self.t = t
+    nh = frame_size // h
+    nw = frame_size // w
 
-    self.transformer = SPAttention(N, d, 12)
+    # Embeddings
+    self.tubelet = TubeletEncoding(t, h, w, hidden, c)
+    self.pos_emb = nn.Parameter(torch.zeros((self.nt, nh * nw + 1, hidden)))
+    self.cls = nn.Parameter(torch.zeros((1, 1, hidden)))
+    
+    # Transformer
+    self.transformer = SPAttention(hidden, 12)
 
     self.linear_classifier = nn.Linear(hidden, num_classes)
         
-  def add_pretrained_weights(npz, self):
+  def add_pretrained_weights(self, npz):
     with torch.no_grad():
+      nt = self.nt
+      self.pos_emb.copy_(torch.from_numpy(npz['Transformer/posembed_input/pos_embedding']).repeat(self.nt, 1, 1))
+      self.cls.copy_(torch.from_numpy(npz['cls']))
 
-      self.pos_emb = npz['Transformer/posembed_input/pos_embedding'].repeat(self.nt, 1, 1)
-      self.cls = npz['cls']
-      self.patch_emb[]
+      # Central frame initialization for embedding weights
+      self.tubelet.projection.weight.copy_(torch.zeros_like(self.tubelet.projection.weight))
+      self.tubelet.projection.weight[:, :, self.t // 2, :, :].copy_(torch.from_numpy(npz['embedding/kernel'].transpose([3, 2, 0, 1])))
+      self.tubelet.projection.bias.copy_(torch.from_numpy(npz['embedding/bias']))
 
-  def forward(x, self):
+      self.transformer.add_pretrained_weights(npz)
 
+  def forward(self, x):
+    
+    print(x.shape)
     x = self.tubelet(x)
-    x = x + self.pos_emb
-    # cls + E
+    cls_tokens = self.cls.repeat(x.shape[0], 16, 1)
+    print(x.shape)
+    x = torch.cat((cls_tokens, x), dim=1) + self.pos_emb.view(-1, self.hidden)
+    print(x.shape)
 
     x = self.transformer(x)
+    print(x.shape)
 
-    x = linear_classifier(x[:, 0])
+    x = self.linear_classifier(x[:, 0, :])
+    print(x.shape)
 
     return x
 
 
 
-class FactorizedEncoder(nn.module):
-  def __init__(self, N, t, h, w, d, c, frames, num_classes):
+class FactorizedEncoder(nn.Module):
+  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87):
 
     super(FactorizedEncoder, self).__init__()
 
-    self.tubelet = TubeletEncoding(t, h, w, d, c)
-    self.pos_emb = nn.Parameter(torch.randn(frames / t, h * w, d))
-    # cls token = 
+    self.nt = frames // t
+    self.hidden = hidden
+    self.t = t
+    nh = frame_size // h
+    nw = frame_size // w
+
+
     # Embeddings
+    self.tubelet = TubeletEncoding(t, h, w, hidden, c)
+    self.pos_emb = nn.Parameter(torch.zeros((1, nh * nw + 1, hidden)))
+    self.spatial_cls = nn.Parameter(torch.zeros((1, 1, hidden)))
+    self.temporal_cls = nn.Parameter(torch.zeros((1, 1, hidden)))
 
-    self.SpatialTransformer = SPAttention(N, d, 12)
-    self.spatialClassifier = nn.Linear(d, num_classes)
+    self.SpatialTransformers = nn.ModuleList(SPAttention(hidden, 12) for _ in range(frames // t))
 
-    self.TemporalTransformer = SPAttention(N, d, 12)
-    self.temporalClassifier = nn.Linear(d, num_classes)
+    self.TemporalTransformer = SPAttention(hidden, 4)
+    self.temporalClassifier = nn.Linear(hidden, num_classes)
 
-  def forward(x, self)
+
+  def add_pretrained_weights(self, npz):
+    with torch.no_grad():
+      nt = self.nt
+      self.pos_emb.copy_(torch.from_numpy(npz['Transformer/posembed_input/pos_embedding']))
+      self.spatial_cls.copy_(torch.from_numpy(npz['cls']))
+      self.temporal_cls.copy_(torch.from_numpy(npz['cls']))
+
+      # Central frame initialization for embedding weights
+      self.tubelet.projection.weight.copy_(torch.zeros_like(self.tubelet.projection.weight))
+      self.tubelet.projection.weight[:, :, self.t // 2, :, :].copy_(torch.from_numpy(npz['embedding/kernel'].transpose([3, 2, 0, 1])))
+      self.tubelet.projection.bias.copy_(torch.from_numpy(npz['embedding/bias']))
+
+      for transformer in self.SpatialTransformers:
+        transformer.add_pretrained_weights(npz)
+
+  def forward(self, x):
+    print(x.shape)
+    x = self.tubelet(x)
+    print(x.shape)
+    x = x.view(x.shape[0], self.nt, -1, self.hidden)
+    print(x.shape)
+    h = torch.zeros((x.shape[0], self.nt, self.hidden))
+
+    for i in range(self.nt):
+      spatial_tokens = self.spatial_cls.repeat(x.shape[0], 1, 1)
+      x_i = torch.cat((spatial_tokens, x[:, i, :, :]), dim=1) + self.pos_emb.view(-1, self.hidden)
+      print(x_i.shape)
+      x_i = self.SpatialTransformers[i](x_i)
+      print(x_i.shape)
+      h[:, i, :] = x_i[:, 0, :]
+    
+    print(h.shape)
+    temporal_tokens = self.temporal_cls.repeat(x.shape[0], self.nt, 1)
+    h = torch.cat((temporal_tokens, h), dim=1)
+    print(h.shape)
+    h = self.TemporalTransformer(h)
+    print(h.shape)
+    return self.temporalClassifier(h[:, 1, :])
+
 
 
 
