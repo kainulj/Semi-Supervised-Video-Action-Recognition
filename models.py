@@ -148,18 +148,13 @@ class SPAModel(nn.Module):
 
   def forward(self, x):
     
-    print(x.shape)
     x = self.tubelet(x)
     cls_tokens = self.cls.repeat(x.shape[0], 16, 1)
-    print(x.shape)
     x = torch.cat((cls_tokens, x), dim=1) + self.pos_emb.view(-1, self.hidden)
-    print(x.shape)
 
     x = self.transformer(x)
-    print(x.shape)
 
     x = self.linear_classifier(x[:, 0, :])
-    print(x.shape)
 
     return x
 
@@ -205,27 +200,19 @@ class FactorizedEncoder(nn.Module):
         transformer.add_pretrained_weights(npz)
 
   def forward(self, x):
-    print(x.shape)
     x = self.tubelet(x)
-    print(x.shape)
     x = x.view(x.shape[0], self.nt, -1, self.hidden)
-    print(x.shape)
     h = torch.zeros((x.shape[0], self.nt, self.hidden))
 
     for i in range(self.nt):
       spatial_tokens = self.spatial_cls.repeat(x.shape[0], 1, 1)
       x_i = torch.cat((spatial_tokens, x[:, i, :, :]), dim=1) + self.pos_emb.view(-1, self.hidden)
-      print(x_i.shape)
       x_i = self.SpatialTransformers[i](x_i)
-      print(x_i.shape)
       h[:, i, :] = x_i[:, 0, :]
     
-    print(h.shape)
     temporal_tokens = self.temporal_cls.repeat(x.shape[0], self.nt, 1)
     h = torch.cat((temporal_tokens, h), dim=1)
-    print(h.shape)
     h = self.TemporalTransformer(h)
-    print(h.shape)
     return self.temporalClassifier(h[:, 1, :])
 
 
