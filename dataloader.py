@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
-from torchvision.transforms import ( CenterCrop, ToTensor, Lambda )
+from torchvision.transforms import ( CenterCrop, ToTensor, Normalize )
 from PIL import Image
 
 def sample_frames(frames, samples, tube_length):
@@ -13,9 +13,13 @@ def sample_frames(frames, samples, tube_length):
     return np.sort(sample_inds)
 
 def augmentator():
+    mean = [0.485, 0.456, 0.406]
+    std = [0.229, 0.224, 0.225]
+
     augments = [
         CenterCrop(224),
-        ToTensor()
+        ToTensor(),
+        Normalize(mean=mean, std=std)
         ]
     augmentor = transforms.Compose(augments)
     return augmentor
@@ -85,7 +89,7 @@ class VideoDataSet(data.Dataset):
         file_list = []
         for line in open(self.list_file):
             elements = line.strip().split(self.seperator)
-            file_list.append([elements[0], int(elements[1]), int(elements[2]), elements[3]])
+            file_list.append([elements[0], int(elements[1]), int(elements[2]), int(elements[3])])
 
         video_list = [VideoRecord(item[0], item[1], item[2], item[3]) for item in file_list]
 

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from einops import rearrange
+import math
+from einops import rearrange, einsum
 from einops.layers.torch import Rearrange
 
 class TubeletEncoding(nn.Module):
@@ -14,10 +15,8 @@ class TubeletEncoding(nn.Module):
                                stride=(t, h, w))
 
   def forward(self, x):
-    b = x.shape[0]
     x = self.projection(x)
-    return x.view(b, -1, self. hidden)
-    
+    return rearrange(x, 'b hid t h w -> b (t h w) hid')
 
 class SPEncoderBlock(nn.Module):
   # Encoder block for the Spatio-Temporal attention
@@ -28,6 +27,7 @@ class SPEncoderBlock(nn.Module):
     self.hidden = hidden
 
     self.norm1 = nn.LayerNorm(hidden)
+    #self.msa = MSA(hidden)
     self.msa = nn.MultiheadAttention(
       embed_dim=hidden,
       num_heads=num_heads,
@@ -60,6 +60,29 @@ class SPEncoderBlock(nn.Module):
       self.norm2.weight.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_NORM}/scale']))
       self.norm2.bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_NORM}/bias']))
 
+      """ # MSA weights
+      k_weight = torch.from_numpy(npz[f'{BLOCK}/{ATT_K}/kernel']).view(self.hidden, self.hidden)
+      q_weight = torch.from_numpy(npz[f'{BLOCK}/{ATT_Q}/kernel']).view(self.hidden, self.hidden)
+      v_weight = torch.from_numpy(npz[f'{BLOCK}/{ATT_V}/kernel']).view(self.hidden, self.hidden)
+
+      self.msa.key.weight.copy_(k_weight)
+      self.msa.query.weight.copy_(q_weight)
+      self.msa.value.weight.copy_(v_weight)
+
+      self.msa.out.weight.copy_(torch.from_numpy(npz[f'{BLOCK}/{ATT_OUT}/kernel']).view(self.hidden, self.hidden)
+  )
+
+      # MSA biases
+      k_bias = torch.from_numpy(npz[f'{BLOCK}/{ATT_K}/bias']).view(-1)
+      q_bias = torch.from_numpy(npz[f'{BLOCK}/{ATT_Q}/bias']).view(-1)
+      v_bias = torch.from_numpy(npz[f'{BLOCK}/{ATT_V}/bias']).view(-1)
+
+      self.msa.key.weight.copy_(k_bias)
+      self.msa.query.weight.copy_(q_bias)
+      self.msa.value.weight.copy_(v_bias)
+
+      self.msa.out.bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{ATT_OUT}/bias']).view(-1)) """
+
       # MSA weights
       k_weight = torch.from_numpy(npz[f'{BLOCK}/{ATT_K}/kernel']).view(self.hidden, self.hidden)
       q_weight = torch.from_numpy(npz[f'{BLOCK}/{ATT_Q}/kernel']).view(self.hidden, self.hidden)
@@ -78,7 +101,6 @@ class SPEncoderBlock(nn.Module):
       self.msa.in_proj_bias.copy_(torch.cat((k_bias, q_bias, v_bias)))
 
       self.msa.out_proj.bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{ATT_OUT}/bias']))
-
       # MLP weights
       self.mlp[0].weight.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_1}/kernel']).t())
       self.mlp[0].bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_1}/bias']))
@@ -86,8 +108,8 @@ class SPEncoderBlock(nn.Module):
       self.mlp[2].bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_2}/bias']))
 
   def forward(self, x):
-    print(x.shape)
     x = self.msa(self.norm1(x), self.norm1(x), self.norm1(x))[0] + x
+    
     x = self.mlp(self.norm2(x)) + x
     return x
 
@@ -123,9 +145,10 @@ class SPAModel(nn.Module):
     nh = frame_size // h
     nw = frame_size // w
 
+    self.a = MSA(hidden)
     # Embeddings
     self.tubelet = TubeletEncoding(t, h, w, hidden, c)
-    self.pos_emb = nn.Parameter(torch.zeros((self.nt, nh * nw + 1, hidden)))
+    self.pos_emb = nn.Parameter(torch.zeros((1, self.nt * nh * nw + 1, hidden)))
     self.cls = nn.Parameter(torch.zeros((1, 1, hidden)))
     
     # Transformer
@@ -136,7 +159,9 @@ class SPAModel(nn.Module):
   def add_pretrained_weights(self, npz):
     with torch.no_grad():
       nt = self.nt
-      self.pos_emb.copy_(torch.from_numpy(npz['Transformer/posembed_input/pos_embedding']).repeat(self.nt, 1, 1))
+      pos_emb = torch.from_numpy(npz['Transformer/posembed_input/pos_embedding'])
+      pos_emb_without_cls = pos_emb[:, 1:, :].repeat(nt, 1, 1).view(1, -1, self.hidden)
+      self.pos_emb.copy_(torch.cat((pos_emb[:, 0, :].view(1, 1, -1), pos_emb_without_cls), dim=1))
       self.cls.copy_(torch.from_numpy(npz['cls']))
 
       # Central frame initialization for embedding weights
@@ -147,15 +172,14 @@ class SPAModel(nn.Module):
       self.transformer.add_pretrained_weights(npz)
 
   def forward(self, x):
-    
     x = self.tubelet(x)
-    cls_tokens = self.cls.repeat(x.shape[0], 16, 1)
-    x = torch.cat((cls_tokens, x), dim=1) + self.pos_emb.view(-1, self.hidden)
+
+    cls_tokens = self.cls.repeat(x.shape[0], 1, 1)
+    x = torch.cat((cls_tokens, x), dim=1) 
+    x += self.pos_emb.repeat(x.shape[0], 1, 1, 1).view(x.shape)
 
     x = self.transformer(x)
-
     x = self.linear_classifier(x[:, 0, :])
-
     return x
 
 
