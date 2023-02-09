@@ -7,9 +7,11 @@ from torchvision.transforms import ( CenterCrop, ToTensor, Normalize )
 from PIL import Image
 
 def sample_frames(frames, samples, tube_length):
-    nof_samples = min(frames // tube_length, samples) 
-    tube_inds = np.arange(1, frames, 2)
-    sample_inds = np.random.choice(tube_inds, nof_samples, replace=False)
+    tube_inds = np.arange(1, frames, tube_length)
+    if len(tube_inds) < samples:
+        sample_inds = np.random.choice(tube_inds, samples, replace=True)
+    else:
+        sample_inds = np.random.choice(tube_inds, samples, replace=False)
     return np.sort(sample_inds)
 
 def augmentator():

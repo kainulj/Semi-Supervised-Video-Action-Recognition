@@ -3,6 +3,7 @@ import torch.nn as nn
 import math
 from einops import rearrange, einsum
 from einops.layers.torch import Rearrange
+import functorch
 
 class TubeletEncoding(nn.Module):
   def __init__(self, t, h, w, hidden, c):
@@ -20,7 +21,7 @@ class TubeletEncoding(nn.Module):
 
 class SPEncoderBlock(nn.Module):
   # Encoder block for the Spatio-Temporal attention
-  def __init__(self, hidden, num_heads=8):
+  def __init__(self, hidden, num_heads=12):
 
     super(SPEncoderBlock, self).__init__()
 
@@ -59,29 +60,6 @@ class SPEncoderBlock(nn.Module):
       self.norm1.bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{ATT_NORM}/bias']))
       self.norm2.weight.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_NORM}/scale']))
       self.norm2.bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_NORM}/bias']))
-
-      """ # MSA weights
-      k_weight = torch.from_numpy(npz[f'{BLOCK}/{ATT_K}/kernel']).view(self.hidden, self.hidden)
-      q_weight = torch.from_numpy(npz[f'{BLOCK}/{ATT_Q}/kernel']).view(self.hidden, self.hidden)
-      v_weight = torch.from_numpy(npz[f'{BLOCK}/{ATT_V}/kernel']).view(self.hidden, self.hidden)
-
-      self.msa.key.weight.copy_(k_weight)
-      self.msa.query.weight.copy_(q_weight)
-      self.msa.value.weight.copy_(v_weight)
-
-      self.msa.out.weight.copy_(torch.from_numpy(npz[f'{BLOCK}/{ATT_OUT}/kernel']).view(self.hidden, self.hidden)
-  )
-
-      # MSA biases
-      k_bias = torch.from_numpy(npz[f'{BLOCK}/{ATT_K}/bias']).view(-1)
-      q_bias = torch.from_numpy(npz[f'{BLOCK}/{ATT_Q}/bias']).view(-1)
-      v_bias = torch.from_numpy(npz[f'{BLOCK}/{ATT_V}/bias']).view(-1)
-
-      self.msa.key.weight.copy_(k_bias)
-      self.msa.query.weight.copy_(q_bias)
-      self.msa.value.weight.copy_(v_bias)
-
-      self.msa.out.bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{ATT_OUT}/bias']).view(-1)) """
 
       # MSA weights
       k_weight = torch.from_numpy(npz[f'{BLOCK}/{ATT_K}/kernel']).view(self.hidden, self.hidden)
@@ -131,6 +109,7 @@ class SPAttention(nn.Module):
 
     for block in self.decoder_blocks:
       x = block(x)
+      print(torch.cuda.memory_allocated() // 10**6)
 
     return x
 
@@ -145,14 +124,13 @@ class SPAModel(nn.Module):
     nh = frame_size // h
     nw = frame_size // w
 
-    self.a = MSA(hidden)
     # Embeddings
     self.tubelet = TubeletEncoding(t, h, w, hidden, c)
     self.pos_emb = nn.Parameter(torch.zeros((1, self.nt * nh * nw + 1, hidden)))
     self.cls = nn.Parameter(torch.zeros((1, 1, hidden)))
     
     # Transformer
-    self.transformer = SPAttention(hidden, 12)
+    self.transformer = SPAttention(hidden, 2)
 
     self.linear_classifier = nn.Linear(hidden, num_classes)
         
@@ -202,7 +180,7 @@ class FactorizedEncoder(nn.Module):
     self.spatial_cls = nn.Parameter(torch.zeros((1, 1, hidden)))
     self.temporal_cls = nn.Parameter(torch.zeros((1, 1, hidden)))
 
-    self.SpatialTransformers = nn.ModuleList(SPAttention(hidden, 12) for _ in range(frames // t))
+    self.SpatialTransformer = SPAttention(hidden, 12)
 
     self.TemporalTransformer = SPAttention(hidden, 4)
     self.temporalClassifier = nn.Linear(hidden, num_classes)
@@ -220,24 +198,26 @@ class FactorizedEncoder(nn.Module):
       self.tubelet.projection.weight[:, :, self.t // 2, :, :].copy_(torch.from_numpy(npz['embedding/kernel'].transpose([3, 2, 0, 1])))
       self.tubelet.projection.bias.copy_(torch.from_numpy(npz['embedding/bias']))
 
-      for transformer in self.SpatialTransformers:
-        transformer.add_pretrained_weights(npz)
+      self.SpatialTransformer.add_pretrained_weights(npz)
+      self.TemporalTransformer.add_pretrained_weights(npz)
 
   def forward(self, x):
+    b = x.shape[0]
     x = self.tubelet(x)
     x = x.view(x.shape[0], self.nt, -1, self.hidden)
-    h = torch.zeros((x.shape[0], self.nt, self.hidden))
-
-    for i in range(self.nt):
-      spatial_tokens = self.spatial_cls.repeat(x.shape[0], 1, 1)
-      x_i = torch.cat((spatial_tokens, x[:, i, :, :]), dim=1) + self.pos_emb.view(-1, self.hidden)
-      x_i = self.SpatialTransformers[i](x_i)
-      h[:, i, :] = x_i[:, 0, :]
     
-    temporal_tokens = self.temporal_cls.repeat(x.shape[0], self.nt, 1)
-    h = torch.cat((temporal_tokens, h), dim=1)
-    h = self.TemporalTransformer(h)
-    return self.temporalClassifier(h[:, 1, :])
+    spatial_tokens = self.spatial_cls.repeat(x.shape[0], self.nt, 1, 1)
+    x = torch.cat((spatial_tokens, x), dim=2)
+    x += self.pos_emb.repeat(self.nt * b, 1, 1).view(x.shape)
+    x = x.view(-1, x.shape[2], self.hidden)
+    x = self.SpatialTransformer(x)
+    x = x.view(b, self.nt, -1, self.hidden)
+    x = x[:, :, 0, :]
+
+    temporal_tokens = self.temporal_cls.repeat(x.shape[0], 1, 1)
+    x = torch.cat((temporal_tokens, x), dim=1)
+    x = self.TemporalTransformer(x)
+    return self.temporalClassifier(x)
 
 
 
