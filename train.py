@@ -17,14 +17,13 @@ def load_weights(model, path='ViT-B_16.npz'):
     model.add_pretrained_weights(npz)
 
 
-
-def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_path):
+def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_path, load_checkpoint=False):
     print('Creating the model')
     if model_num == 1:
         model = SPAModel()
         model_name = 'SPAModel.pth'
     else:
-        model = FactorizedEncoder()
+        model = FactorizedEncoder(L=4)
         model_name = 'FactorizedEncoder.pth'
 
     print('Loading the weights')
@@ -32,6 +31,7 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
         load_weights(model)
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model.to(device)
     
     workers = 4
 
@@ -59,8 +59,17 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
     lambda1 = lambda step: schedule(step, int(warm_up * steps_per_epoch), int(steps_per_epoch * epochs))
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
 
+    start_epoch = 0
+    # Load checkpoint
+    if load_checkpoint:
+        print("Loading model checkpoint")
+        checkpoint = torch.load(model_name)
+        model.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler.load_state_dict(checkpoint['scheduler'])
+        start_epoch = checkpoint['epoch']
+
     # Training loop
-    model.to(device)
     st = time.time()
     print('Starting training')
     for epoch in range(epochs):
@@ -94,12 +103,14 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
         st = time.time()
     
     state = {
-        'epoch': epoch + 1,
+        'epoch': start_epoch + epoch + 1,
         'state_dict': model.state_dict(),
         'optimizer': optimizer.state_dict(),
         'scheduler': scheduler.state_dict()
     }
     
+    print(start_epoch + epoch + 1)
+
     torch.save(state, model_name)
 
 
