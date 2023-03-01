@@ -19,16 +19,14 @@ class TubeletEncoding(nn.Module):
     x = self.projection(x)
     return rearrange(x, 'b hid t h w -> b (t h w) hid')
 
-class SPEncoderBlock(nn.Module):
-  # Encoder block for the Spatio-Temporal attention
+class EncoderBlock(nn.Module):
   def __init__(self, hidden, num_heads=12):
 
-    super(SPEncoderBlock, self).__init__()
+    super(EncoderBlock, self).__init__()
 
     self.hidden = hidden
 
     self.norm1 = nn.LayerNorm(hidden)
-    #self.msa = MSA(hidden)
     self.msa = nn.MultiheadAttention(
       embed_dim=hidden,
       num_heads=num_heads,
@@ -86,18 +84,19 @@ class SPEncoderBlock(nn.Module):
       self.mlp[2].bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_2}/bias']))
 
   def forward(self, x):
-    x = self.msa(self.norm1(x), self.norm1(x), self.norm1(x))[0] + x
+    y = self.norm1(x)
+    x = self.msa(y, y, y)[0] + x
     
     x = self.mlp(self.norm2(x)) + x
     return x
 
-class SPAttention(nn.Module):
+class Attention(nn.Module):
   # Spatio-Temporal attention
   def __init__(self, hidden, L):
 
-    super(SPAttention, self).__init__()
+    super(Attention, self).__init__()
     self.L = L
-    self.decoder_blocks = nn.ModuleList([SPEncoderBlock(hidden) for i in range(L)])
+    self.decoder_blocks = nn.ModuleList([EncoderBlock(hidden) for i in range(L)])
 
   def add_pretrained_weights(self, npz):
     with torch.no_grad():
@@ -109,13 +108,11 @@ class SPAttention(nn.Module):
 
     for block in self.decoder_blocks:
       x = block(x)
-      print(torch.cuda.memory_allocated() // 10**6)
-
     return x
 
 
 class SPAModel(nn.Module):
-  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87):
+  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87, L=12):
     
     super(SPAModel, self).__init__()
     self.nt = frames // t
@@ -130,9 +127,9 @@ class SPAModel(nn.Module):
     self.cls = nn.Parameter(torch.zeros((1, 1, hidden)))
     
     # Transformer
-    self.transformer = SPAttention(hidden, 2)
+    self.transformer = Attention(hidden, L)
 
-    self.linear_classifier = nn.Linear(hidden, num_classes)
+    self.mlp_head = nn.Linear(hidden, num_classes)
         
   def add_pretrained_weights(self, npz):
     with torch.no_grad():
@@ -150,20 +147,27 @@ class SPAModel(nn.Module):
       self.transformer.add_pretrained_weights(npz)
 
   def forward(self, x):
+    # Tubelet embedding
     x = self.tubelet(x)
 
+    # Add classification token
     cls_tokens = self.cls.repeat(x.shape[0], 1, 1)
-    x = torch.cat((cls_tokens, x), dim=1) 
+    x = torch.cat((cls_tokens, x), dim=1)
+
+    # Add positional embedding
     x += self.pos_emb.repeat(x.shape[0], 1, 1, 1).view(x.shape)
 
     x = self.transformer(x)
-    x = self.linear_classifier(x[:, 0, :])
+    
+    # Classify based on the cls tokens
+    x = self.mlp_head(x[:, 0, :])
+  
     return x
 
 
 
 class FactorizedEncoder(nn.Module):
-  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87):
+  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87, L=12):
 
     super(FactorizedEncoder, self).__init__()
 
@@ -180,11 +184,11 @@ class FactorizedEncoder(nn.Module):
     self.spatial_cls = nn.Parameter(torch.zeros((1, 1, hidden)))
     self.temporal_cls = nn.Parameter(torch.zeros((1, 1, hidden)))
 
-    self.SpatialTransformer = SPAttention(hidden, 12)
+    self.SpatialTransformer = Attention(hidden, L)
 
-    self.TemporalTransformer = SPAttention(hidden, 4)
-    self.temporalClassifier = nn.Linear(hidden, num_classes)
+    self.TemporalTransformer = Attention(hidden, 4)
 
+    self.mlp_head = nn.Linear(hidden, num_classes)
 
   def add_pretrained_weights(self, npz):
     with torch.no_grad():
@@ -203,21 +207,34 @@ class FactorizedEncoder(nn.Module):
 
   def forward(self, x):
     b = x.shape[0]
+
+    # Tubelet embedding
     x = self.tubelet(x)
     x = x.view(x.shape[0], self.nt, -1, self.hidden)
     
+    # Add spatial classification token
     spatial_tokens = self.spatial_cls.repeat(x.shape[0], self.nt, 1, 1)
     x = torch.cat((spatial_tokens, x), dim=2)
+
+    # Add positional embedding
     x += self.pos_emb.repeat(self.nt * b, 1, 1).view(x.shape)
+
     x = x.view(-1, x.shape[2], self.hidden)
     x = self.SpatialTransformer(x)
     x = x.view(b, self.nt, -1, self.hidden)
+
     x = x[:, :, 0, :]
 
+    # Add temporal classification token
     temporal_tokens = self.temporal_cls.repeat(x.shape[0], 1, 1)
     x = torch.cat((temporal_tokens, x), dim=1)
+
     x = self.TemporalTransformer(x)
-    return self.temporalClassifier(x)
+
+    # Classify based on the cls tokens
+    x = x[:, 0, :]
+    x = self.mlp_head(x)
+    return x
 
 
 
