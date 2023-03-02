@@ -1,25 +1,36 @@
 import torch
 import torch.nn as nn
 import math
-from einops import rearrange, einsum
-from einops.layers.torch import Rearrange
+from einops import rearrange
 import functorch
 
 class TubeletEncoding(nn.Module):
+  """ Tubelet Encoding.
+  Parameters:
+    t: length of the tubelets.
+    h: height of the tubelets.
+    w: width of the tubelets.
+    hidden: hidden size.
+    c: Number of channels in the input.
+  """
   def __init__(self, t, h, w, hidden, c):
 
     super(TubeletEncoding, self).__init__()
-    tubelet_dim = c * t * h * w
-    self.hidden = hidden
     self.projection = nn.Conv3d(in_channels=c, out_channels=hidden, 
                                kernel_size=(t, h, w),
                                stride=(t, h, w))
 
   def forward(self, x):
+    # Create the tubelets
     x = self.projection(x)
     return rearrange(x, 'b hid t h w -> b (t h w) hid')
 
 class EncoderBlock(nn.Module):
+  """ Encoder block.
+  Parameters:
+    hidden: hidden size.
+    num_heads: NUmber of heads in the MultiheadAttention.
+  """
   def __init__(self, hidden, num_heads=12):
 
     super(EncoderBlock, self).__init__()
@@ -90,11 +101,15 @@ class EncoderBlock(nn.Module):
     x = self.mlp(self.norm2(x)) + x
     return x
 
-class Attention(nn.Module):
-  # Spatio-Temporal attention
+class Transformer(nn.Module):
+  """ Transformer.
+  Parameters:
+    hidden: hidden size.
+    L: Number of layers.
+  """
   def __init__(self, hidden, L):
 
-    super(Attention, self).__init__()
+    super(Transformer, self).__init__()
     self.L = L
     self.decoder_blocks = nn.ModuleList([EncoderBlock(hidden) for i in range(L)])
 
@@ -112,6 +127,19 @@ class Attention(nn.Module):
 
 
 class SPAModel(nn.Module):
+  """ Model 1 Spatio-temporal attention.
+  Parameters:
+    frame_size: frame size of the input.
+    t: length of the tubelets.
+    h: height of the tubelets.
+    w: width of the tubelets.
+    hidden: hidden size.
+    c: Number of channels in the input.
+    frames:  NUmber of the sampled frames.
+    num_classes: NUmber of classes in the data set.
+    L: Number of layers in the transformer.
+  """
+
   def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87, L=12):
     
     super(SPAModel, self).__init__()
@@ -127,7 +155,7 @@ class SPAModel(nn.Module):
     self.cls = nn.Parameter(torch.zeros((1, 1, hidden)))
     
     # Transformer
-    self.transformer = Attention(hidden, L)
+    self.transformer = Transformer(hidden, L)
 
     self.mlp_head = nn.Linear(hidden, num_classes)
         
@@ -157,6 +185,7 @@ class SPAModel(nn.Module):
     # Add positional embedding
     x += self.pos_emb.repeat(x.shape[0], 1, 1, 1).view(x.shape)
 
+    # Attention blocks
     x = self.transformer(x)
     
     # Classify based on the cls tokens
@@ -167,7 +196,22 @@ class SPAModel(nn.Module):
 
 
 class FactorizedEncoder(nn.Module):
-  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87, L=12):
+  """ Model 2 Factorized encoder.
+  Parameters:
+    frame_size: frame size of the input.
+    t: length of the tubelets.
+    h: height of the tubelets.
+    w: width of the tubelets.
+    hidden: hidden size.
+    c: Number of channels in the input.
+    frames:  NUmber of the sampled frames.
+    num_classes: NUmber of classes in the data set.
+    Ls: Number of layers in the Spatial transformer.
+    Lt: Number of layers in the Temporal transformer.
+  """
+
+
+  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87, Ls=12, Lt=4):
 
     super(FactorizedEncoder, self).__init__()
 
@@ -181,12 +225,14 @@ class FactorizedEncoder(nn.Module):
     # Embeddings
     self.tubelet = TubeletEncoding(t, h, w, hidden, c)
     self.pos_emb = nn.Parameter(torch.zeros((1, nh * nw + 1, hidden)))
+
+    # CLS tokens
     self.spatial_cls = nn.Parameter(torch.zeros((1, 1, hidden)))
     self.temporal_cls = nn.Parameter(torch.zeros((1, 1, hidden)))
 
-    self.SpatialTransformer = Attention(hidden, L)
+    self.SpatialTransformer = Transformer(hidden, Ls)
 
-    self.TemporalTransformer = Attention(hidden, 4)
+    self.TemporalTransformer = Transformer(hidden, Lt)
 
     self.mlp_head = nn.Linear(hidden, num_classes)
 
@@ -223,6 +269,7 @@ class FactorizedEncoder(nn.Module):
     x = self.SpatialTransformer(x)
     x = x.view(b, self.nt, -1, self.hidden)
 
+    # Use spatial cls-token as a input for the temporal transformer
     x = x[:, :, 0, :]
 
     # Add temporal classification token
@@ -231,7 +278,7 @@ class FactorizedEncoder(nn.Module):
 
     x = self.TemporalTransformer(x)
 
-    # Classify based on the cls tokens
+    # Classify based on the temporal cls tokens
     x = x[:, 0, :]
     x = self.mlp_head(x)
     return x
