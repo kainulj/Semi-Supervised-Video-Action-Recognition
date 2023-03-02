@@ -7,7 +7,7 @@ from tqdm import tqdm
 from dataloader import VideoDataSet
 import time
 
-TRAINING_SET_SIZE = 27
+TRAINING_SET_SIZE = 81663
 
 
 def load_weights(model, path='ViT-B_16.npz'):
@@ -56,12 +56,13 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
     # Number of minibatches per batch
     i_per_batch = 64 // batch_size
 
+    # Cosine learning rate scheduler with linear warmup
     lambda1 = lambda step: schedule(step, int(warm_up * steps_per_epoch), int(steps_per_epoch * epochs))
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
 
     start_epoch = 0
-    # Load checkpoint
     if load_checkpoint:
+        # Load checkpoint
         print("Loading model checkpoint")
         checkpoint = torch.load(model_name)
         model.load_state_dict(checkpoint['state_dict'])
@@ -72,38 +73,36 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
     # Training loop
     st = time.time()
     print('Starting training')
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         model.train()
         epoch_loss = 0.0
-        with tqdm(total=TRAINING_SET_SIZE) as t_bar:
-            for i, (images, target) in enumerate(trainloader):
-                images, target = images.to(device, non_blocking=True), target.to(device, non_blocking=True)
-                
-                with torch.cuda.amp.autocast():
-                    output = model(images)
-                    loss = loss_fn(output, target) / i_per_batch
+        for i, (images, target) in enumerate(trainloader):
+            images, target = images.to(device, non_blocking=True), target.to(device, non_blocking=True)
+            
+            with torch.cuda.amp.autocast():
+                output = model(images)
+                loss = loss_fn(output, target) / i_per_batch
 
 
-                scaler.scale(loss).backward()
-                # Update gradients every i_per_batch minibatch
-                if (i + 1) % i_per_batch == 0 or (i+1) == len(trainloader):
-                    torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=1)
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad(set_to_none=True)
-                    scheduler.step()
+            scaler.scale(loss).backward()
+            # Update gradients every i_per_batch minibatch
+            if (i + 1) % i_per_batch == 0 or (i+1) == len(trainloader):
+                # Clip the gradients
+                torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=1)
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad(set_to_none=True)
+                scheduler.step()
+            
+            epoch_loss += loss
                 
-                epoch_loss += loss
-                
-                if (i + 1) % (100 * i_per_batch) == 0:
-                    t_bar.update(100 * i_per_batch * batch_size)
         et = time.time()
         accuracy, eval_loss = eval(model, evalloader, device)
-        print(f'Epoch {epoch + 1}, accuracy: {accuracy}, evaluation loss: {eval_loss}, time: {et - st}')
+        print(f'Epoch {epoch + 1}, loss: {epoch_loss / steps_per_epoch}, accuracy: {accuracy}, evaluation loss: {eval_loss}, time: {et - st}')
         st = time.time()
     
     state = {
-        'epoch': start_epoch + epoch + 1,
+        'epoch': epoch + 1,
         'state_dict': model.state_dict(),
         'optimizer': optimizer.state_dict(),
         'scheduler': scheduler.state_dict()
@@ -136,6 +135,7 @@ def schedule(step, warmup, total):
     # linear warmup
     if step < warmup:
         return step / warmup
-    step = (step - warmup) / np.min(1, total - warmup)
+    curr_step = step - warmup
+    max_step = max(1, total - warmup) 
     # cosine learnig rate
-    return 0.5 + 1/2 * (1 + np.cos(step * np.pi))
+    return 0.5 * (1 + np.cos(curr_step / max_step * np.pi))
