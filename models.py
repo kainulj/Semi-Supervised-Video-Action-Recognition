@@ -112,6 +112,7 @@ class Transformer(nn.Module):
     super(Transformer, self).__init__()
     self.L = L
     self.decoder_blocks = nn.ModuleList([EncoderBlock(hidden) for i in range(L)])
+    self.encodernorm = nn.LayerNorm(hidden)
 
   def add_pretrained_weights(self, npz):
     with torch.no_grad():
@@ -123,6 +124,7 @@ class Transformer(nn.Module):
 
     for block in self.decoder_blocks:
       x = block(x)
+    x = encodernorm(x)
     return x
 
 
