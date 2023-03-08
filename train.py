@@ -23,7 +23,7 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
         model = SPAModel()
         model_name = 'SPAModel.pth'
     else:
-        model = FactorizedEncoder(L=4)
+        model = FactorizedEncoder()
         model_name = 'FactorizedEncoder.pth'
 
     print('Loading the weights')
