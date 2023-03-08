@@ -31,11 +31,12 @@ class EncoderBlock(nn.Module):
     hidden: hidden size.
     num_heads: NUmber of heads in the MultiheadAttention.
   """
-  def __init__(self, hidden, num_heads=12):
+  def __init__(self, hidden, drop_layer_rate, block_n, L, num_heads=12):
 
     super(EncoderBlock, self).__init__()
 
     self.hidden = hidden
+    self.droplayer_p = block_n / max(L - 1, 1) * drop_layer_rate
 
     self.norm1 = nn.LayerNorm(hidden)
     self.msa = nn.MultiheadAttention(
@@ -94,11 +95,15 @@ class EncoderBlock(nn.Module):
       self.mlp[2].weight.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_2}/kernel']).t())
       self.mlp[2].bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_2}/bias']))
 
+  def drop_layer_pattern(self, x):
+    shape = (x.shape[0],) + (1,) * (x.ndim - 1)
+    return torch.empty(shape).bernoulli(self.droplayer_p).to(x.device)
+
   def forward(self, x):
     y = self.norm1(x)
-    x = self.msa(y, y, y)[0] + x
+    x = self.msa(y, y, y)[0] * (1.0 - self.drop_layer_pattern(x)) + x
     
-    x = self.mlp(self.norm2(x)) + x
+    x = self.mlp(self.norm2(x)) * (1.0 - self.drop_layer_pattern(x)) + x
     return x
 
 class Transformer(nn.Module):
@@ -107,11 +112,11 @@ class Transformer(nn.Module):
     hidden: hidden size.
     L: Number of layers.
   """
-  def __init__(self, hidden, L):
+  def __init__(self, hidden, L, drop_layer_rate):
 
     super(Transformer, self).__init__()
     self.L = L
-    self.decoder_blocks = nn.ModuleList([EncoderBlock(hidden) for i in range(L)])
+    self.decoder_blocks = nn.ModuleList([EncoderBlock(hidden, drop_layer_rate, i, L) for i in range(L)])
     self.encodernorm = nn.LayerNorm(hidden)
 
   def add_pretrained_weights(self, npz):
@@ -124,7 +129,7 @@ class Transformer(nn.Module):
 
     for block in self.decoder_blocks:
       x = block(x)
-    x = encodernorm(x)
+    x = self.encodernorm(x)
     return x
 
 
@@ -142,7 +147,7 @@ class SPAModel(nn.Module):
     L: Number of layers in the transformer.
   """
 
-  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87, L=12):
+  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87, L=12, drop_layer_rate=0.3):
     
     super(SPAModel, self).__init__()
     self.nt = frames // t
@@ -157,7 +162,7 @@ class SPAModel(nn.Module):
     self.cls = nn.Parameter(torch.zeros((1, 1, hidden)))
     
     # Transformer
-    self.transformer = Transformer(hidden, L)
+    self.transformer = Transformer(hidden, L, drop_layer_rate)
 
     self.mlp_head = nn.Linear(hidden, num_classes)
         
@@ -213,7 +218,7 @@ class FactorizedEncoder(nn.Module):
   """
 
 
-  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87, Ls=12, Lt=4):
+  def __init__(self, frame_size=224, t=2, h=16, w=16, hidden=768, c=3, frames=32, num_classes=87, Ls=12, Lt=4, drop_layer_rate=0.3):
 
     super(FactorizedEncoder, self).__init__()
 
@@ -232,9 +237,9 @@ class FactorizedEncoder(nn.Module):
     self.spatial_cls = nn.Parameter(torch.zeros((1, 1, hidden)))
     self.temporal_cls = nn.Parameter(torch.zeros((1, 1, hidden)))
 
-    self.SpatialTransformer = Transformer(hidden, Ls)
+    self.SpatialTransformer = Transformer(hidden, Ls, drop_layer_rate)
 
-    self.TemporalTransformer = Transformer(hidden, Lt)
+    self.TemporalTransformer = Transformer(hidden, Lt, drop_layer_rate)
 
     self.mlp_head = nn.Linear(hidden, num_classes)
 
