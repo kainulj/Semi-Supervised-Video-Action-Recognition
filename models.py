@@ -96,8 +96,10 @@ class EncoderBlock(nn.Module):
       self.mlp[2].bias.copy_(torch.from_numpy(npz[f'{BLOCK}/{MLP_2}/bias']))
 
   def drop_layer_pattern(self, x):
-    shape = (x.shape[0],) + (1,) * (x.ndim - 1)
-    return torch.empty(shape).bernoulli(self.droplayer_p).to(x.device)
+    if self.training:
+      shape = (x.shape[0],) + (1,) * (x.ndim - 1)
+      return torch.empty(shape).bernoulli(self.droplayer_p).to(x.device)
+    return 0.0
 
   def forward(self, x):
     y = self.norm1(x)
