@@ -3,7 +3,8 @@ import numpy as np
 import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
-from torchvision.transforms import ( CenterCrop, ToTensor, Normalize )
+from torchvision.transforms import ( Normalize )
+from videotransforms import ( CenterCrop, Normalize, RandomCrop, RandomFlip, ToTensor, RandomScale )
 from PIL import Image
 
 def sample_frames(frames, samples, tube_length):
@@ -14,15 +15,27 @@ def sample_frames(frames, samples, tube_length):
         sample_inds = np.random.choice(tube_inds, samples, replace=False)
     return np.sort(sample_inds)
 
-def augmentator():
+
+
+def augmentator(is_train):
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
 
-    augments = [
-        CenterCrop(224),
-        ToTensor(),
-        Normalize(mean=mean, std=std)
+    augments = []
+
+    if is_train:
+        augments += [
+            RandomFlip(0.5),
+            RandomScale(0.95, 1.33),
+            RandomCrop(224),
         ]
+    else:
+        augments += [ CenterCrop(224) ]
+
+    augments += [
+        ToTensor(),
+        Normalize(mean, std)
+    ]
     augmentor = transforms.Compose(augments)
     return augmentor
 
@@ -59,7 +72,7 @@ class VideoDataSet(data.Dataset):
         self.seperator = seperator
         self.video_list = self.create_video_list()
         self.num_classes = num_classes
-        self.transforms = augmentator()
+        self.transforms = augmentator(is_train)
 
 
     def _load_image(self, directory, idx):
@@ -68,7 +81,6 @@ class VideoDataSet(data.Dataset):
             img_tmp = Image.open(img_path)
             img = img_tmp.copy()
             img_tmp.close()
-            img = self.transforms(img)
             return img
 
         num_try = 0
@@ -106,6 +118,7 @@ class VideoDataSet(data.Dataset):
                 img = self._load_image(record.path, frame + i)
                 images.append(img)
 
+        images = self.transforms(images)
         images = torch.stack(images)
         images = torch.transpose(images, 0, 1)
         return images, record.label

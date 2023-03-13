@@ -23,11 +23,11 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
         model = SPAModel()
         model_name = 'SPAModel.pth'
     else:
-        model = FactorizedEncoder(L=4)
+        model = FactorizedEncoder()
         model_name = 'FactorizedEncoder.pth'
 
-    print('Loading the weights')
     if pretrained:
+        print('Loading the weights')
         load_weights(model)
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -49,7 +49,7 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
 
     steps_per_epoch = TRAINING_SET_SIZE // 64
 
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.3)
 
     scaler = torch.cuda.amp.GradScaler()
 
@@ -83,10 +83,11 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
                 output = model(images)
                 loss = loss_fn(output, target) / i_per_batch
 
-
             scaler.scale(loss).backward()
             # Update gradients every i_per_batch minibatch
             if (i + 1) % i_per_batch == 0 or (i+1) == len(trainloader):
+                # Unscale the gradients before clipping
+                scaler.unscale_(optimizer)
                 # Clip the gradients
                 torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=1)
                 scaler.step(optimizer)
@@ -107,8 +108,6 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
         'optimizer': optimizer.state_dict(),
         'scheduler': scheduler.state_dict()
     }
-    
-    print(start_epoch + epoch + 1)
 
     torch.save(state, model_name)
 
@@ -118,7 +117,7 @@ def eval(model, evalloader, device):
     correct = 0
     total = 0
     eval_loss = 0.0
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.3)
     with torch.no_grad():
         for images, target in evalloader:
             images, target = images.to(device), target.to(device)
