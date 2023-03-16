@@ -2,10 +2,9 @@ import os
 import numpy as np
 import torch
 import torch.utils.data as data
-import torchvision.transforms as transforms
-from torchvision.transforms import ( Normalize )
-from videotransforms import ( CenterCrop, Normalize, RandomCrop, RandomFlip, ToTensor, RandomScale )
+from torchvision.transforms import ( ToTensor, RandAugment, Resize, RandomCrop, CenterCrop, RandomHorizontalFlip, Normalize, Compose, ConvertImageDtype )
 from PIL import Image
+import random
 
 def sample_frames(frames, samples, tube_length):
     tube_inds = np.arange(1, frames, tube_length)
@@ -24,19 +23,20 @@ def augmentator(is_train):
     augments = []
 
     if is_train:
+        scale = random.uniform(0.95, 1.3)
+        new_size = int(240 * scale)
         augments += [
-            RandomFlip(0.5),
-            RandomScale(0.95, 1.33),
+            Resize(new_size),
             RandomCrop(224),
+            RandomHorizontalFlip(0.5),
+            Normalize(mean, std)
         ]
     else:
-        augments += [ CenterCrop(224) ]
-
-    augments += [
-        ToTensor(),
-        Normalize(mean, std)
-    ]
-    augmentor = transforms.Compose(augments)
+        augments += [
+            CenterCrop(224),
+            Normalize(mean, std)
+        ]
+    augmentor = Compose(augments)
     return augmentor
 
     
@@ -73,6 +73,7 @@ class VideoDataSet(data.Dataset):
         self.video_list = self.create_video_list()
         self.num_classes = num_classes
         self.transforms = augmentator(is_train)
+        self.to_tensor = ToTensor()
 
 
     def _load_image(self, directory, idx):
@@ -115,11 +116,11 @@ class VideoDataSet(data.Dataset):
         images = []
         for frame in sampled_frames:
             for i in range(self.tube_length):
-                img = self._load_image(record.path, frame + i)
+                img = self.to_tensor(self._load_image(record.path, frame + i))
                 images.append(img)
 
-        images = self.transforms(images)
         images = torch.stack(images)
+        images = self.transforms(images)
         images = torch.transpose(images, 0, 1)
         return images, record.label
 

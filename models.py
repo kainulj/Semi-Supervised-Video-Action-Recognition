@@ -127,6 +127,10 @@ class Transformer(nn.Module):
       for i in range(self.L):
         self.decoder_blocks[i].add_pretrained_weights(npz, i)
 
+      # Encoder norm weights
+      self.encodernorm.weight.copy_(torch.from_numpy(npz[f'Transformer/encoder_norm/scale']))
+      self.encodernorm.bias.copy_(torch.from_numpy(npz[f'Transformer/encoder_norm/bias']))
+
   def forward(self, x):
 
     for block in self.decoder_blocks:
