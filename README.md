@@ -31,14 +31,19 @@ The batch size is the size of the minibatches, the actual batch size is 64 label
 
 ### Optional parameters
 `---num_labeled`, Number of labeled videos per class, default is 300
+
 `---mu`, Coefficient of unlabeled batch size, default is 7
+
 `---lambda_u`, Coefficient of unlabeled loss, default is 1
 
 
 ### Optional parameters used in both scripts
 `---pretrained`, Default is True, if True uses the pretrained weights
+
 `---train_path`, path to the file containing the training data, default is '../train.txt'
+
 `---eval_path`, path to the file containing the validation data, default is '../eval.txt'
+
 `---load_checkpoint`, Default is False, if True loads model checkpoint
 
 ## The data
@@ -53,6 +58,7 @@ path/to/video_x_folder 1 300 1
 ## Triton scripts
 
 `train_supervised.sh` contains the script for supervised learning. 
+
 `train_ssl.sh` contains the script for SSL. 
 
 
