@@ -1,9 +1,9 @@
-#Semi-Supervised Video Action Recognition
+# Semi-Supervised Video Action Recognition
 
 The code for the Semi-Supervised Video Action Recognition-paper.
 
 
-##The pretrained model ViT-B_16.npz:
+## The pretrained model ViT-B_16.npz:
 Downloaded from: https://github.com/google-research/vision_transformer#available-vit-models
 ```
 wget https://storage.googleapis.com/vit_models/imagenet21k/ViT-B_16.npz
