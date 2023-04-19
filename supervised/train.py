@@ -7,6 +7,7 @@ from tqdm import tqdm
 from dataloader import VideoDataSet
 import time
 from tqdm import tqdm
+import argparse
 
 TRAINING_SET_SIZE = 81663
 
@@ -37,12 +38,12 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
     workers = 4
 
     print('Creating the training dataset')
-    trainset = VideoDataSet('..', train_path)
+    trainset = VideoDataSet('../..', train_path)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle = True,
                                               num_workers=workers, pin_memory=True)
      
     print('Creating the validation dataset')
-    evalset = VideoDataSet('..', eval_path, is_train=False)
+    evalset = VideoDataSet('../..', eval_path, is_train=False)
     evalloader = torch.utils.data.DataLoader(evalset, batch_size=batch_size,
                                               num_workers=workers, pin_memory=True)
 

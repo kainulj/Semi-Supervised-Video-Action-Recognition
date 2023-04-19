@@ -6,6 +6,7 @@ from models import SPAModel, FactorizedEncoder
 from dataloader import FixMatchDataSet, split_l_u, create_video_list
 import time
 import torch.nn.functional as F
+import argparse
 
 TRAINING_SET_SIZE = 81663
 NUM_CLASSES = 87
@@ -169,8 +170,6 @@ def schedule(step, warmup, total):
     # cosine learnig rate
     return 0.5 * (1 + np.cos(curr_step / max_step * np.pi))
 
-train(2, pretrained=False, batch_size=1, num_labeled=NUM_CLASSES*300, mu=7, lambda_u=1, threshold=0.1, epochs=40, warm_up=2.5, train_path='../train.txt', eval_path='../val.txt', load_checkpoint=True)
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -180,7 +179,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_labeled", type=int, default=300, help="Number of labeled videos pre class")
     parser.add_argument("--mu", type=int, default=7, help="Coefficient of unlabeled batch size")
     parser.add_argument("--lambda_u", type=int, default=1, help="Coefficient of unlabeled loss")
-    parser.add_argument("--threshold", type=float, required0True, help="Confidence threshold")
+    parser.add_argument("--threshold", type=float, required=True, help="Confidence threshold")
     parser.add_argument("--epochs", type=int, required=True, help="Number of epochs")
     parser.add_argument("--warm_up", type=float, required=True, help="Number of warm up epochs")
     parser.add_argument("--train_path", type=str, default='../train.txt', help="Path to the train data file")
