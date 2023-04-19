@@ -19,7 +19,7 @@ def load_weights(model, path='ViT-B_16.npz'):
     model.add_pretrained_weights(npz)
 
 
-def train(model_num, pretrained, batch_size, num_labeled, mu, lambda_u, threshold, epochs, warm_up, train_path, eval_path, load_checkpoint=False):
+def train(model_num, pretrained, batch_size, num_labeled, mu, lambda_u, threshold, epochs, train_path, eval_path, load_checkpoint=False):
     print('Creating the model')
     if model_num == 1:
         model = SPAModel()
@@ -160,16 +160,6 @@ def eval(model, evalloader, device):
             correct += (predicted == target).sum().item()
     return correct / total, eval_loss
 
-
-def schedule(step, warmup, total):
-    # linear warmup
-    if step < warmup:
-        return step / warmup
-    curr_step = step - warmup
-    max_step = max(1, total - warmup) 
-    # cosine learnig rate
-    return 0.5 * (1 + np.cos(curr_step / max_step * np.pi))
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -181,7 +171,6 @@ if __name__ == "__main__":
     parser.add_argument("--lambda_u", type=int, default=1, help="Coefficient of unlabeled loss")
     parser.add_argument("--threshold", type=float, required=True, help="Confidence threshold")
     parser.add_argument("--epochs", type=int, required=True, help="Number of epochs")
-    parser.add_argument("--warm_up", type=float, required=True, help="Number of warm up epochs")
     parser.add_argument("--train_path", type=str, default='../train.txt', help="Path to the train data file")
     parser.add_argument("--eval_path", type=str, default='../eval.txt', help="Path to the validation data file")
     parser.add_argument("--load_checkpoint", type=bool, default=False, help="Continue from a checkpoint")
@@ -189,4 +178,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    train(args.model, args.pretrained, args.batch_size, args.num_labeled*NUM_CLASSES, args.mu, args.lambda_u, args.threshold, args.epochs, args.warm_up, args.train_path, args.eval_path, args.load_checkpoint)
+    train(args.model, args.pretrained, args.batch_size, args.num_labeled*NUM_CLASSES, args.mu, args.lambda_u, args.threshold, args.epochs, args.train_path, args.eval_path, args.load_checkpoint)
