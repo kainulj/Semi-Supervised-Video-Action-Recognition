@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import math
-from einops import rearrange
+from einops import rearrange, repeat
 import functorch
 
 class TubeletEncoding(nn.Module):
@@ -257,8 +257,8 @@ class FactorizedEncoder(nn.Module):
       self.temporal_cls.copy_(torch.from_numpy(npz['cls']))
 
       # Central frame initialization for embedding weights
-      self.tubelet.projection.weight.copy_(torch.zeros_like(self.tubelet.projection.weight))
-      self.tubelet.projection.weight[:, :, self.t // 2, :, :].copy_(torch.from_numpy(npz['embedding/kernel'].transpose([3, 2, 0, 1])))
+      embedding_weights = torch.from_numpy(npz['embedding/kernel'].transpose([3, 2, 0, 1]))  / self.t
+      self.tubelet.projection.weight.copy_(repeat(embedding_weights, 'hid c w h -> hid c t w h', t=self.t))
       self.tubelet.projection.bias.copy_(torch.from_numpy(npz['embedding/bias']))
 
       self.SpatialTransformer.add_pretrained_weights(npz)
@@ -295,7 +295,3 @@ class FactorizedEncoder(nn.Module):
     x = x[:, 0, :]
     x = self.mlp_head(x)
     return x
-
-
-
-
