@@ -139,7 +139,6 @@ def schedule(step, warmup, total):
     # cosine learnig rate
     return 0.5 * (1 + np.cos(curr_step / max_step * np.pi))
 
-train(2, pretrained=False, batch_size=16, epochs=25, warm_up=2.5, train_path='../train.txt', eval_path='../val.txt', load_checkpoint=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
