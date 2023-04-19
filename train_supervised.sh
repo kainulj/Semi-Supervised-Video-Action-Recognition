@@ -11,7 +11,7 @@ cp $WRKDIR/train.txt /tmp/$SLURM_JOB_ID           # copy tarred input files
 cp $WRKDIR/val.txt /tmp/$SLURM_JOB_ID           # copy tarred input files
 cp -R $WRKDIR/supervised /tmp/$SLURM_JOB_ID
 cp $WRKDIR/models.py tmp/$SLURM_JOB_ID/supervised  # Copy the models file to the supervised folder
-cp $WRKDIR/ViT-B_16.npztmp/$SLURM_JOB_ID/supervised # Copy the pretrained weights to the supervised folder
+cp $WRKDIR/ViT-B_16.npz tmp/$SLURM_JOB_ID/supervised # Copy the pretrained weights to the supervised folder
 cd /tmp/$SLURM_JOB_ID
 
 trap "rm -rf /tmp/$SLURM_JOB_ID; exit" TERM EXIT  # set the trap: when killed or exits abnormally you clean up your stuff
