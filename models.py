@@ -249,17 +249,23 @@ class FactorizedEncoder(nn.Module):
 
     self.mlp_head = nn.Linear(hidden, num_classes)
 
-  def add_pretrained_weights(self, npz):
+  def add_pretrained_weights(self, npz, central_frame='False'):
     with torch.no_grad():
       nt = self.nt
       self.pos_emb.copy_(torch.from_numpy(npz['Transformer/posembed_input/pos_embedding']))
       self.spatial_cls.copy_(torch.from_numpy(npz['cls']))
       self.temporal_cls.copy_(torch.from_numpy(npz['cls']))
 
-      # Central frame initialization for embedding weights
-      embedding_weights = torch.from_numpy(npz['embedding/kernel'].transpose([3, 2, 0, 1]))  / self.t
-      self.tubelet.projection.weight.copy_(repeat(embedding_weights, 'hid c w h -> hid c t w h', t=self.t))
-      self.tubelet.projection.bias.copy_(torch.from_numpy(npz['embedding/bias']))
+      # Filter inflation initialization for embedding weights
+      if central_frame:
+        self.tubelet.projection.weight.copy_(torch.zeros_like(self.tubelet.projection.weight))
+        self.tubelet.projection.weight[:, :, self.t // 2, :, :].copy_(torch.from_numpy(npz['embedding/kernel'].transpose([3, 2, 0, 1])))
+        self.tubelet.projection.bias.copy_(torch.from_numpy(npz['embedding/bias']))
+
+      else:
+        embedding_weights = torch.from_numpy(npz['embedding/kernel'].transpose([3, 2, 0, 1]))  / self.t
+        self.tubelet.projection.weight.copy_(repeat(embedding_weights, 'hid c w h -> hid c t w h', t=self.t))
+        self.tubelet.projection.bias.copy_(torch.from_numpy(npz['embedding/bias']))
 
       self.SpatialTransformer.add_pretrained_weights(npz)
       self.TemporalTransformer.add_pretrained_weights(npz)

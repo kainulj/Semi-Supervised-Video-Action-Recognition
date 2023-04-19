@@ -6,6 +6,7 @@ from models import SPAModel, FactorizedEncoder
 from tqdm import tqdm
 from dataloader import VideoDataSet
 import time
+from tqdm import tqdm
 
 TRAINING_SET_SIZE = 81663
 
@@ -24,7 +25,7 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
         model_name = 'SPAModel.pth'
     else:
         model = FactorizedEncoder()
-        model_name = 'FactorizedEncoder.pth'
+        model_name = 'FactorizedEncoder_pretrained.pth'
 
     if pretrained:
         print('Loading the weights')
@@ -37,15 +38,15 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
 
     print('Creating the training dataset')
     trainset = VideoDataSet('..', train_path)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle = True,
                                               num_workers=workers, pin_memory=True)
      
     print('Creating the validation dataset')
-    evalset = VideoDataSet('..', eval_path)
+    evalset = VideoDataSet('..', eval_path, is_train=False)
     evalloader = torch.utils.data.DataLoader(evalset, batch_size=batch_size,
                                               num_workers=workers, pin_memory=True)
 
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.5, momentum=0.9)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.4, momentum=0.9)
 
     steps_per_epoch = TRAINING_SET_SIZE // 64
 
@@ -96,7 +97,6 @@ def train(model_num, pretrained, batch_size, epochs, warm_up, train_path, eval_p
                 scheduler.step()
             
             epoch_loss += loss
-                
         et = time.time()
         accuracy, eval_loss = eval(model, evalloader, device)
         print(f'Epoch {epoch + 1}, loss: {epoch_loss / steps_per_epoch}, accuracy: {accuracy}, evaluation loss: {eval_loss}, time: {et - st}')
@@ -138,3 +138,22 @@ def schedule(step, warmup, total):
     max_step = max(1, total - warmup) 
     # cosine learnig rate
     return 0.5 * (1 + np.cos(curr_step / max_step * np.pi))
+
+train(2, pretrained=False, batch_size=16, epochs=25, warm_up=2.5, train_path='../train.txt', eval_path='../val.txt', load_checkpoint=True)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--model", type=int, required=True, help="The model number")
+    parser.add_argument("--pretrained", type=bool, default=True, help="Is the model initialized with the pretrained model")
+    parser.add_argument("--batch_size", type=int, required=True, help="Batch size")
+    parser.add_argument("--epochs", type=int, required=True, help="Number of epochs")
+    parser.add_argument("--warm_up", type=float, required=True, help="Number of warm up epochs")
+    parser.add_argument("--train_path", type=str, default='../train.txt', help="Path to the train data file")
+    parser.add_argument("--eval_path", type=str, default='../eval.txt', help="Path to the validation data file")
+    parser.add_argument("--load_checkpoint", type=bool, default=False, help="Continue from a checkpoint")
+    
+
+    args = parser.parse_args()
+
+    train(args.model, args.pretrained, args.batch_size, args.epochs, args.warm_up, args.train_path, args.eval_path, args.load_checkpoint)
