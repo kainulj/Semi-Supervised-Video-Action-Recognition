@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --time=36:00:00
+#SBATCH --time=40:00:00
 #SBATCH --mem=28000
 #SBATCH --gres=gpu:v100:1                    
 #SBATCH --cpus-per-task=4            # time and memory requirements
@@ -22,5 +22,5 @@ echo "tar validation set"
 tar xf validation.tar                                  # untar the files
 echo "run the python script"
 cd supervised 
-srun  python3 train.py --model=2 --batch_size=16 --epochs=25 --warm_up=2.5   # train the model
+srun  python3 train.py --model 2 --batch_size 16 --epochs 25 --warm_up 2.5   # train the model
 mv  'FactorizedEncoder.pth' $WRKDIR
