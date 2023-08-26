@@ -1,5 +1,9 @@
 # Semi-Supervised Video Action Recognition
 
+Aalto university project for course CS-E4875.
+
+[The report](<Semi-Supervised Video Action Recognition.pdf>)
+
 ## The pretrained model ViT-B_16.npz:
 Downloaded from: https://github.com/google-research/vision_transformer#available-vit-models
 ```
