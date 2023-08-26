@@ -2,7 +2,6 @@
 
 The code for the Semi-Supervised Video Action Recognition-paper.
 
-
 ## The pretrained model ViT-B_16.npz:
 Downloaded from: https://github.com/google-research/vision_transformer#available-vit-models
 ```
@@ -12,14 +11,32 @@ Pre-trained with ImageNet-21k
 The models.py file contains the methods that add the weights to the pytorch model.
 
 
+## The models
+
+Only model 2, Factorized Encoder was used in the report. 
+
+```
+FactorizedEncoder(
+  frame_size=224,      # Video frame size
+  t=2,                 # Length of the tubelets
+  h=16,                # Height of the tubelets
+  w=16,                # Width of the tubelets
+  hidden=768,          # Hidden size
+  c=3,                 # Number of color channels
+  frames=32,           # Number of frames in the video
+  num_classes=87       # Number of classes in the dataset
+  Ls=12,               # Number of layers in the spatial tranformer
+  Lt=4                 # Number of layers in the temporal tranformer
+  drop_layer_rate=0.3  # Dropout layer rate
+)
+```
 ## The supervised folder contains the training script and dataloader for the supervised learning.
 
 ### Train the supervised
 ```
 python3 supervised/train.py --model 2 --batch_size 16 --epochs 25 --warm_up 2.5
 ```
-The batch size is the size of the minibatches, the actual batch size is 64. Minibatch of size 16 fits to one v100-GPU, with multiple  GPUs this can be increased.
-
+The batch size is the size of the minibatches, the actual batch size is 64.
 
 ## The Fixmatch folder contains the training script and dataloader for the SSL learning
 
@@ -54,11 +71,3 @@ Each line in train.txt, val.txt and test.txt includes 4 elements and separated b
 ```
 path/to/video_x_folder 1 300 1
 ```
-
-## Triton scripts
-
-`train_supervised.sh` contains the script for supervised learning. 
-
-`train_ssl.sh` contains the script for SSL. 
-
-
