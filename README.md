@@ -1,6 +1,6 @@
 # Semi-Supervised Video Action Recognition
 
-Aalto university project for course CS-E4875.
+Aalto university project for course CS-E4875. The project researched the viability of semi-supervised learning with video action recognition. The report contains the methods used in the project and the results of the project.  
 
 [The report](<Semi-Supervised Video Action Recognition.pdf>)
 
