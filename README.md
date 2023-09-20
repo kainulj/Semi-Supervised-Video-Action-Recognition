@@ -4,16 +4,10 @@ Aalto university project for course CS-E4875. The project researched the viabili
 
 [The report](<Semi-Supervised Video Action Recognition.pdf>)
 
-## The pretrained model ViT-B_16.npz:
-Downloaded from: https://github.com/google-research/vision_transformer#available-vit-models
-```
-wget https://storage.googleapis.com/vit_models/imagenet21k/ViT-B_16.npz
-```
-Pre-trained with ImageNet-21k
-The models.py file contains the methods that add the weights to the pytorch model.
-
-
 ## The models
+
+Two models are implemented from the [ViViT: A Video Vision Transformer-paper](https://arxiv.org/abs/2103.15691).
+![](assets/model.PNG).
 
 Only model 2, Factorized Encoder was used in the report. 
 
@@ -32,6 +26,16 @@ FactorizedEncoder(
   drop_layer_rate=0.3  # Dropout layer rate
 )
 ```
+
+
+## The pretrained model ViT-B_16.npz:
+Downloaded from: https://github.com/google-research/vision_transformer#available-vit-models
+```
+wget https://storage.googleapis.com/vit_models/imagenet21k/ViT-B_16.npz
+```
+### Pre-trained with ImageNet-21k
+The models.py file contains the methods that add the weights to the pytorch model.
+
 ## The supervised folder contains the training script and dataloader for the supervised learning.
 
 ### Train the supervised
