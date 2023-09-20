@@ -54,6 +54,8 @@ The batch size is the size of the minibatches, the actual batch size is 64.
 
 ## The Fixmatch folder contains the training script and dataloader for the SSL learning
 
+The augmentations are adapted from [Fixmatch-pytorch-repository](https://github.com/kekmodel/FixMatch-pytorch/blob/master/dataset/randaugment.py)
+
 ### Train the SSL
 ```
 python3 FixMatch/train.py --model 2 --batch_size 1 --epochs 40 --threshold 0.25
