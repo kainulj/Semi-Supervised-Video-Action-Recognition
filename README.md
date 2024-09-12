@@ -1,15 +1,18 @@
 # Semi-Supervised Video Action Recognition
 
-Aalto university project for course CS-E4875. The project researched the viability of semi-supervised learning with video action recognition. The report contains the methods used in the project and the results of the project. 
+This project, conducted for the CS-E4875 course at Aalto University, explored the viability of semi-supervised learning for video action recognition. The report outlines the methods employed in the project and presents the results.
 
 [The report](<Semi-Supervised Video Action Recognition.pdf>)
 
-The performance of the models were evaluated on mini-Something-Something v2 dataset, with 300 labeled videos per class. [FixMatch-algorithm](https://arxiv.org/abs/2001.07685) was used for the semi-supervised learning.
+
+The performance of the models was evaluated on the mini-Something-Something v2 dataset, using 300 labeled videos per class. For the semi-supervised learning approach, the [FixMatch-algorithm](https://arxiv.org/abs/2001.07685) algorithm was utilized.
 
 | Training method    | Top1-Accuracy | Top5-Accuracy |
 | -------- | ------- | ------- |
 | Supervised  | 20.1 %    |  50.4 %    |
 | Semi-supervised  | 23.8 %    |  55.7 %    |
+
+The results demonstrate that the model trained with semi-supervised learning outperforms the model trained solely with supervised learning. These findings suggest that incorporating semi-supervised learning can be an effective strategy for enhancing model performance by leveraging unlabeled data.
 
 
 ## The models
