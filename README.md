@@ -83,7 +83,7 @@ The batch size is the size of the minibatches, the actual batch size is 64 label
 `---load_checkpoint`, Default is False, if True loads model checkpoint
 
 ## The data
- Created with code from https://github.com/IBM/action-recognition-pytorch, the following is copied from there
+The data was generated using code from https://github.com/IBM/action-recognition-pytorch, the following is copied from there
 
 Each line in train.txt, val.txt and test.txt includes 4 elements and separated by a symbol, e.g. space or semicolon. Four elements (in order) include (1)relative paths to video_x_folder from dataset_dir, (2) starting frame number, usually 1, (3) ending frame number, (4) label id (a numeric number).
 
