@@ -12,7 +12,7 @@ The performance of the models was evaluated on the mini-Something-Something v2 d
 | Supervised  | 20.1 %    |  50.4 %    |
 | Semi-supervised  | 23.8 %    |  55.7 %    |
 
-The results demonstrate that the model trained with semi-supervised learning outperforms the model trained solely with supervised learning. These findings suggest that incorporating semi-supervised learning can be an effective strategy for enhancing model performance by leveraging unlabeled data.
+The results demonstrate that the model trained with semi-supervised learning outperforms the model trained solely with supervised learning. These findings suggest that incorporating semi-supervised learning is an effective strategy for enhancing model performance by utilizing unlabeled data.
 
 
 ## The models
